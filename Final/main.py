@@ -10,12 +10,23 @@ import time
 
 # ADs data path
 image_root_directory = os.path.join('c:\\', 'Users\\PranayDev\\Documents\\ComputerVision\\Project\\ImageEmotion\\agg\\images')
-directories = {'amusement':image_root_directory + '\\' + 'amusement', 
+directories = {
+#  'amusement':image_root_directory + '\\' + 'amusement', 
  'anger':image_root_directory + '\\' + 'anger', 
- 'awe':image_root_directory + '\\' + 'awe', 
+ 'fear':image_root_directory + '\\' + 'fear',
+#  'awe':image_root_directory + '\\' + 'awe', 
  'contentment':image_root_directory + '\\' + 'contentment', 
- 'excitement':image_root_directory + '\\' + 'excitement', 
- 'fear':image_root_directory + '\\' + 'fear'}
+ 'sadness':image_root_directory + "\\" + '',
+ 'excitement':image_root_directory + '\\' + 'excitement' 
+ }
+
+image_emotion_map = {
+     'anger': 0,
+     'fear': 2,
+     'contentment': 3,
+     'sadness': 4,
+     'excitement': 3
+ }
 
 # parameters for loading data and images
 detection_model_path = 'haarcascade_files/haarcascade_frontalface_default.xml.txt'
@@ -49,9 +60,46 @@ def get_ad_image():
         img = img / 255.0
         img = img - 0.5
         img = img * 2.0
-        emotion = [0] * 8
-        emotion[list(directories.keys()).index(target_emotion)] = 1
+        emotion = [0] * 6
+        emotion[list(image_emotion_map.keys()).index(target_emotion)] = 1
     return image, emotion, target_emotion
+
+def get_gaze_ratio(eye_points, facial_landmarks):
+    left_eye_region = np.array([(facial_landmarks.part(eye_points[0]).x, facial_landmarks.part(eye_points[0]).y),
+                                (facial_landmarks.part(eye_points[1]).x, facial_landmarks.part(eye_points[1]).y),
+                                (facial_landmarks.part(eye_points[2]).x, facial_landmarks.part(eye_points[2]).y),
+                                (facial_landmarks.part(eye_points[3]).x, facial_landmarks.part(eye_points[3]).y),
+                                (facial_landmarks.part(eye_points[4]).x, facial_landmarks.part(eye_points[4]).y),
+                                (facial_landmarks.part(eye_points[5]).x, facial_landmarks.part(eye_points[5]).y)], np.int32)
+    # cv2.polylines(frame, [left_eye_region], True, (0, 0, 255), 2)
+
+    height, width, _ = frame.shape
+    mask = np.zeros((height, width), np.uint8)
+    cv2.polylines(mask, [left_eye_region], True, 255, 2)
+    cv2.fillPoly(mask, [left_eye_region], 255)
+    eye = cv2.bitwise_and(gray, gray, mask=mask)
+
+    min_x = np.min(left_eye_region[:, 0])
+    max_x = np.max(left_eye_region[:, 0])
+    min_y = np.min(left_eye_region[:, 1])
+    max_y = np.max(left_eye_region[:, 1])
+
+    gray_eye = eye[min_y: max_y, min_x: max_x]
+    _, threshold_eye = cv2.threshold(gray_eye, 70, 255, cv2.THRESH_BINARY)
+    height, width = threshold_eye.shape
+    left_side_threshold = threshold_eye[0: height, 0: int(width / 2)]
+    left_side_white = cv2.countNonZero(left_side_threshold)
+
+    right_side_threshold = threshold_eye[0: height, int(width / 2): width]
+    right_side_white = cv2.countNonZero(right_side_threshold)
+
+    if left_side_white == 0:
+        gaze_ratio = 1
+    elif right_side_white == 0:
+        gaze_ratio = 5
+    else:
+        gaze_ratio = left_side_white / right_side_white
+    return gaze_ratio
 
 def is_looking_in_frame(gray):
     faces = detector(gray)
@@ -59,41 +107,11 @@ def is_looking_in_frame(gray):
     for face in faces:
         landmarks = predictor(gray, face)
 
-        left_eye_region = np.array([(landmarks.part(36).x, landmarks.part(36).y),
-                            (landmarks.part(37).x, landmarks.part(37).y),
-                            (landmarks.part(38).x, landmarks.part(38).y),
-                            (landmarks.part(39).x, landmarks.part(39).y),
-                            (landmarks.part(40).x, landmarks.part(40).y),
-                            (landmarks.part(41).x, landmarks.part(41).y)], np.int32)
+        gaze_ratio_left_eye = get_gaze_ratio([36, 37, 38, 39, 40, 41], landmarks)
+        gaze_ratio_right_eye = get_gaze_ratio([42, 43, 44, 45, 46, 47], landmarks)
+        gaze_ratio = (gaze_ratio_right_eye + gaze_ratio_left_eye) / 2
 
-        height, width, _ = frame.shape
-        mask = np.zeros((height, width), np.uint8)
-        cv2.polylines(mask, [left_eye_region], True, 255, 2)
-        cv2.fillPoly(mask, [left_eye_region], 255)
-        left_eye = cv2.bitwise_and(gray, gray, mask=mask)
-
-        min_x = np.min(left_eye_region[:, 0])
-        max_x = np.max(left_eye_region[:, 0])
-        min_y = np.min(left_eye_region[:, 1])
-        max_y = np.max(left_eye_region[:, 1])
-        gray_eye = left_eye[min_y: max_y, min_x: max_x]
-        _, threshold_eye = cv2.threshold(gray_eye, 70, 255, cv2.THRESH_BINARY)
-
-        threshold_eye = cv2.resize(threshold_eye, None, fx=5, fy=5)
-        height, width = threshold_eye.shape
-        left_side_threshold = threshold_eye[0: height, 0: int(width / 2)]
-        left_side_white = cv2.countNonZero(left_side_threshold)
-        right_side_threshold = threshold_eye[0: height, int(width / 2): width]
-        right_side_white = cv2.countNonZero(right_side_threshold)
-       
-        font = cv2.FONT_HERSHEY_SIMPLEX 
-
-        if(right_side_white > 0):
-            gaze_ratio = left_side_white / right_side_white
-        else:
-            gaze_ratio  = 1
-
-        if gaze_ratio <= 0.05 or gaze_ratio >= 5:
+        if gaze_ratio <= 0.7 or gaze_ratio >= 1.7:
             return False
         else:
             return True
@@ -137,28 +155,28 @@ def get_facial_emotions(gray, frame):
         return label, preds, canvas
 
 def should_change_ad(facial_emotions, ad_emotions):
-    facial_emotion_vector = np.zeros(8)
-    ad_emotions_vector = np.array(ad_emotions)
-    facial_emotion_vector[0] = facial_emotions[3]
-    facial_emotion_vector[1] = facial_emotions[0]
-    facial_emotion_vector[2] = facial_emotions[3]
-    facial_emotion_vector[3] = facial_emotions[3]
-    facial_emotion_vector[4] = facial_emotions[1]
-    facial_emotion_vector[5] = facial_emotions[5]
-    facial_emotion_vector[6] = facial_emotions[2]
-    facial_emotion_vector[7] = facial_emotions[4]
-    cos_sim = np.dot(facial_emotion_vector, ad_emotions_vector)/(np.linalg.norm(facial_emotion_vector)*np.linalg.norm(ad_emotions_vector))
+    # facial_emotion_vector = np.zeros(8)
+    # ad_emotions_vector = np.array(ad_emotions)
+    # facial_emotion_vector[0] = facial_emotions[3]
+    # facial_emotion_vector[1] = facial_emotions[0]
+    # facial_emotion_vector[2] = facial_emotions[3]
+    # facial_emotion_vector[3] = facial_emotions[3]
+    # facial_emotion_vector[4] = facial_emotions[1]
+    # facial_emotion_vector[5] = facial_emotions[5]
+    # facial_emotion_vector[6] = facial_emotions[2]
+    # facial_emotion_vector[7] = facial_emotions[4]
+    # cos_sim = np.dot(facial_emotion_vector, ad_emotions_vector)/(np.linalg.norm(facial_emotion_vector)*np.linalg.norm(ad_emotions_vector))
 
-    # facial_emotion_vector = np.array(facial_emotions)[0:6]
+    facial_emotion_vector = np.array(facial_emotions)[0:6]
     # facial_emotion_vector = facial_emotion_vector/np.linalg.norm(facial_emotion_vector)
-    # ad_emotions_vector = np.zeros(6)
+    ad_emotions_vector = np.array(ad_emotions)
     # ad_emotions_vector[0] = ad_emotions[1]
     # ad_emotions_vector[1] = ad_emotions[4]
     # ad_emotions_vector[2] = ad_emotions[6]
     # ad_emotions_vector[3] = ad_emotions[0] + ad_emotions[2] + ad_emotions[3]
     # ad_emotions_vector[4] = ad_emotions[7]
     # ad_emotions_vector[5] = ad_emotions[5]
-    # cos_sim = np.dot(facial_emotion_vector, ad_emotions_vector)/(np.linalg.norm(facial_emotion_vector)*np.linalg.norm(ad_emotions_vector))
+    cos_sim = np.dot(facial_emotion_vector, ad_emotions_vector)/(np.linalg.norm(facial_emotion_vector)*np.linalg.norm(ad_emotions_vector))
 
     print(cos_sim)
     if cos_sim<0.4:
