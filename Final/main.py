@@ -161,7 +161,7 @@ def should_change_ad(facial_emotions, ad_emotions):
     # cos_sim = np.dot(facial_emotion_vector, ad_emotions_vector)/(np.linalg.norm(facial_emotion_vector)*np.linalg.norm(ad_emotions_vector))
 
     print(cos_sim)
-    if cos_sim<0.8:
+    if cos_sim<0.4:
         return True
     else:
         return False
@@ -187,6 +187,7 @@ while True:
             if label != "neutral":
                 change_ad = should_change_ad(facial_emotions, ad_emotions)
                 if change_ad:
+                    cv2.putText(ad_image, target_emotion, (50, 100), cv2.FONT_ITALIC, 2, (0, 0, 255), 3)
                     ad_image, ad_emotions, target_emotion = get_ad_image()
                     cv2.putText(ad_image, target_emotion, (50, 100), cv2.FONT_ITALIC, 2, (0, 0, 255), 3)
                     cv2.imshow("Ad", ad_image)
